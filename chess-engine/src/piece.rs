@@ -24,6 +24,19 @@ pub enum Kind {
     King,
 }
 
+pub enum Moves<'b> {
+    Pawn(pawn::Moves<'b>),
+}
+
+impl<'b> Iterator for Moves<'b> {
+    type Item = Position;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Pawn(moves) => moves.next(),
+        }
+    }
+}
+
 impl Piece {
     pub fn new(color: Color, kind: Kind) -> Self {
         Self { color, kind }
@@ -63,8 +76,15 @@ impl Piece {
             self.kind.name()
         }
     }
+    pub fn moves<'b>(&self, board: &'b Board, from: Position) -> Moves<'b> {
+        match self.kind {
+            Kind::Pawn => Moves::Pawn(pawn::Moves::new(board, from)),
+            _ => unimplemented!(),
+        }
+    }
     /// Returns whether the piece at `move_.from` legally can move to
     /// `move_.to`.
+    #[deprecated]
     pub fn can_move(&self, move_: Move, board: &Board) -> bool {
         // if in check:
         //     if only one piece is checking king:
@@ -78,16 +98,20 @@ impl Piece {
         // else:
         //     avoid revealed checks
 
+        #[allow(deprecated)]
         self.get_moves(board, move_.from).contains(&move_.to)
     }
+    #[deprecated]
     pub fn get_moves(&self, board: &Board, from: Position) -> Vec<Position> {
         let mut ret = vec![];
+        #[allow(deprecated)]
         self.append_moves(board, from, &mut ret);
         ret
     }
+    #[deprecated]
     pub fn append_moves(&self, board: &Board, from: Position, dst: &mut Vec<Position>) {
         match self.kind {
-            Kind::Pawn => pawn::append_moves(board, from, dst),
+            Kind::Pawn => dst.extend(self.moves(board, from)),
             Kind::Rook => rook::append_moves(board, from, dst),
             Kind::Knight => knight::append_moves(board, from, dst),
             Kind::Bishop => bishop::append_moves(board, from, dst),
