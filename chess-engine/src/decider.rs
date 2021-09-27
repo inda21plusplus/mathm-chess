@@ -1,8 +1,8 @@
 use crate::{piece, Board, Error, Game, GameState, Move};
 
 /// # Example use:
-/// ```rust
-/// use chess_engine::{piece, Board, Decider};
+/// ```no_run
+/// use chess_engine::{piece, Board, Decider, Move};
 ///
 /// struct Application {
 ///     /* all data needed to run the application, such as windows, etc. */
@@ -11,9 +11,11 @@ use crate::{piece, Board, Error, Game, GameState, Move};
 /// impl Decider for Application {
 ///     fn get_move(&mut self, board: &Board) -> Move {
 ///         /* ... */
+///         # panic!()
 ///     }
 ///     fn get_pawn_promotion(&mut self) -> piece::Kind {
 ///         /* ... */
+///         # panic!()
 ///     }
 /// }
 ///

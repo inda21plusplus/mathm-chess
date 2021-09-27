@@ -2,10 +2,23 @@ use crate::{piece, Board, Color, Error, Move, Piece, Position};
 
 /// # Example use:
 /// ```rust
+/// # use chess_engine::{piece, Board, Game, GameState, Move};
+///
 /// let mut game = Game::new(Board::default());
 /// loop {
-///     let move_: Move = /* ... */;
-///     match game.make_move(move_, a)
+///     # fn get_move() -> Move { Move { from: (0, 0).into(), to: (0, 0).into() } }
+///     # fn get_promotion() -> piece::Kind { piece::Kind::Queen }
+///     match game.make_move(get_move(), || get_promotion()) {
+///         Ok(GameState::Ongoing) => {}
+///         Ok(s) => {
+///             println!("{:?}", s);
+///             break;
+///         }
+///         Err(err) => {
+///             println!("{}", err);
+///             break;
+///         }
+///     }
 /// }
 /// ```
 #[derive(Debug, Clone)]
