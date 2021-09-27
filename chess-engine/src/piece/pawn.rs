@@ -18,21 +18,22 @@ impl<'b> Moves<'b> {
             state: 0,
         }
     }
+    fn checkcheck(&self, empty: &[Position], occupied: &[Position]) -> bool {
+        !threatened_at(
+            self.board.get_king_position(self.color),
+            empty,
+            occupied,
+            self.color,
+            self.board,
+        )
+    }
     fn move_forwards(&self) -> Option<Position> {
         let pos = Position::new(
             self.from.file(),
             (self.from.rank() as i8 + self.color.forwards()) as u8,
         )?;
 
-        if self.board[pos].is_none()
-            && !threatened_at(
-                self.board.get_king_position(self.color),
-                &[self.from],
-                &[pos],
-                self.color,
-                self.board,
-            )
-        {
+        if self.board[pos].is_none() && self.checkcheck(&[self.from], &[pos]) {
             Some(pos)
         } else {
             None
@@ -57,13 +58,7 @@ impl<'b> Moves<'b> {
 
         if self.board[in_between_pos].is_none()
             && self.board[destination].is_none()
-            && !threatened_at(
-                self.board.get_king_position(self.color),
-                &[self.from],
-                &[destination],
-                self.color,
-                self.board,
-            )
+            && self.checkcheck(&[self.from], &[destination])
         {
             Some(destination)
         } else {
@@ -85,16 +80,13 @@ impl<'b> Moves<'b> {
 
         if self.board[pos].map(|p| p.color) == Some(self.color.other())
             || is_ep
-                && !threatened_at(
-                    self.board.get_king_position(self.color),
+                && self.checkcheck(
                     if is_ep {
                         cleared_pieces_en_passant
                     } else {
                         cleared_pieces_normal
                     },
                     &[pos],
-                    self.color,
-                    self.board,
                 )
         {
             Some(pos)

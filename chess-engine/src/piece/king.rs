@@ -1,9 +1,64 @@
 use crate::{Board, Color, Position};
 
 use super::util::threatened_at;
+use super::Piece;
 
 pub fn checks(_at: Position, _color: Color, _board: &Board) -> bool {
     false
+}
+
+pub struct Moves<'b> {
+    board: &'b Board,
+    from: Position,
+    color: Color,
+    state: u8,
+}
+
+impl<'b> Moves<'b> {
+    pub fn new(board: &'b Board, from: Position) -> Self {
+        Self {
+            board,
+            from,
+            color: board[from].unwrap().color,
+            state: 0,
+        }
+    }
+}
+
+impl<'b> Iterator for Moves<'b> {
+    type Item = Position;
+    fn next(&mut self) -> Option<Self::Item> {
+        let checkcheck = |pos| !threatened_at(pos, &[self.from], &[], self.color, self.board);
+
+        loop {
+            let (x, y) = [
+                (1, 0),
+                (1, -1),
+                (0, -1),
+                (-1, -1),
+                (-1, 0),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+            ]
+            .get(self.state as usize)?;
+            self.state += 1;
+
+            let pos = match Position::new_i8(self.from.file() as i8 + x, self.from.rank() as i8 + y)
+            {
+                Some(pos) => pos,
+                None => {
+                    continue;
+                }
+            };
+
+            break match self.board[pos] {
+                None if checkcheck(pos) => Some(pos),
+                Some(Piece { color: c, .. }) if c != self.color && checkcheck(pos) => Some(pos),
+                _ => continue,
+            };
+        }
+    }
 }
 
 pub fn append_moves(board: &Board, from: Position, dst: &mut Vec<Position>) {

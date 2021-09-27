@@ -26,6 +26,7 @@ pub enum Kind {
 
 pub enum Moves<'b> {
     Pawn(pawn::Moves<'b>),
+    Rook(rook::Moves<'b>),
 }
 
 impl<'b> Iterator for Moves<'b> {
@@ -33,6 +34,7 @@ impl<'b> Iterator for Moves<'b> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Pawn(moves) => moves.next(),
+            Self::Rook(moves) => moves.next(),
         }
     }
 }
@@ -79,6 +81,7 @@ impl Piece {
     pub fn moves<'b>(&self, board: &'b Board, from: Position) -> Moves<'b> {
         match self.kind {
             Kind::Pawn => Moves::Pawn(pawn::Moves::new(board, from)),
+            Kind::Rook => Moves::Rook(rook::Moves::new(board, from)),
             _ => unimplemented!(),
         }
     }
