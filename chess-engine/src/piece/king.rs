@@ -54,26 +54,26 @@ impl<'b> Iterator for Moves<'b> {
                 }
             };
 
-            if *x == -2
-                && (!self.board.can_castle_queenside(self.color)
+            if *x == -2 {
+                let in_between = Position::new_unchecked(self.from.file() - 1, self.from.rank());
+                if !self.board.can_castle_queenside(self.color)
                     || !checkcheck(self.from)
-                    || !checkcheck(Position::new_unchecked(
-                        self.from.file() - 1,
-                        self.from.rank(),
-                    )))
-            {
-                continue;
+                    || self.board[in_between].is_some()
+                    || !checkcheck(in_between)
+                {
+                    continue;
+                }
             }
 
-            if *x == 2
-                && (!self.board.can_castle_kingside(self.color)
+            if *x == 2 {
+                let in_between = Position::new_unchecked(self.from.file() + 1, self.from.rank());
+                if !self.board.can_castle_kingside(self.color)
                     || !checkcheck(self.from)
-                    || !checkcheck(Position::new_unchecked(
-                        self.from.file() + 1,
-                        self.from.rank(),
-                    )))
-            {
-                continue;
+                    || self.board[in_between].is_some()
+                    || !checkcheck(in_between)
+                {
+                    continue;
+                }
             }
 
             break match self.board[pos] {

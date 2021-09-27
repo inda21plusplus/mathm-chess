@@ -56,6 +56,12 @@ fn perft(game: Game, depth: usize) -> usize {
                 if piece.color != game.board().next_to_move() {
                     continue;
                 }
+                let mut moves = vec![];
+                #[allow(deprecated)]
+                piece.append_moves(game.board(), pos, &mut moves);
+                let new_moves: Vec<Position> = piece.moves(game.board(), pos).collect();
+                assert_eq!(moves, new_moves, "{}", game.board().to_string());
+
                 for to in piece.moves(game.board(), pos) {
                     let mut g = Game::new(game.board().clone());
                     g.make_move(Move { from: pos, to }, || panic!()).unwrap();
