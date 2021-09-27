@@ -56,9 +56,7 @@ fn perft(game: Game, depth: usize) -> usize {
                 if piece.color != game.board().next_to_move() {
                     continue;
                 }
-                let mut moves = vec![];
-                piece.append_moves(game.board(), pos, &mut moves);
-                for to in moves {
+                for to in piece.moves(game.board(), pos) {
                     let mut g = Game::new(game.board().clone());
                     g.make_move(Move { from: pos, to }, || panic!()).unwrap();
                     ans += perft(g, depth - 1);

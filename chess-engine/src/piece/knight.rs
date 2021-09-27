@@ -32,18 +32,8 @@ impl<'b> Moves<'b> {
 impl<'b> Iterator for Moves<'b> {
     type Item = Position;
     fn next(&mut self) -> Option<Self::Item> {
-        let checkcheck = |pos| {
-            !threatened_at(
-                self.board.get_king_position(self.color),
-                &[self.from],
-                &[pos],
-                self.color,
-                self.board,
-            )
-        };
-
         loop {
-            let delta = [
+            let (x, y) = [
                 (2, -1),
                 (1, -2),
                 (-1, -2),
@@ -56,16 +46,23 @@ impl<'b> Iterator for Moves<'b> {
             .get(self.state as usize)?;
             self.state += 1;
 
-            let pos = match Position::new_i8(
-                self.from.file() as i8 + delta.0,
-                self.from.rank() as i8 + delta.1,
-            ) {
+            let pos = match Position::new_i8(self.from.file() as i8 + x, self.from.rank() as i8 + y)
+            {
                 Some(pos) => pos,
                 None => {
                     continue;
                 }
             };
 
+            let checkcheck = |pos| {
+                !threatened_at(
+                    self.board.get_king_position(self.color),
+                    &[self.from],
+                    &[pos],
+                    self.color,
+                    self.board,
+                )
+            };
             break match self.board[pos] {
                 None if checkcheck(pos) => Some(pos),
                 Some(Piece { color: c, .. }) if c != self.color && checkcheck(pos) => Some(pos),

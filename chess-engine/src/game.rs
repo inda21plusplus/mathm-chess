@@ -37,7 +37,7 @@ impl Game {
             if piece.color != self.board.next_to_move() {
                 return Err(Error::OtherPlayersTurn);
             }
-            if !piece.can_move(move_, &self.board) {
+            if !piece.moves(self.board(), move_.from).any(|p| p == move_.to) {
                 return Err(Error::IllegalMove);
             }
         } else {
@@ -113,18 +113,21 @@ impl Game {
             self.board.reset_halfmove_counter();
         }
 
-        let mut moves = vec![];
-        for rank in 0..8 {
+        let mut has_moves = false;
+        'outer: for rank in 0..8 {
             for file in 0..8 {
                 let pos = Position::new_unchecked(file, rank);
                 if let Some(piece) = self.board[pos] {
-                    if piece.color == self.board.next_to_move() {
-                        piece.append_moves(&self.board, pos, &mut moves);
+                    if piece.color == self.board.next_to_move()
+                        && piece.moves(&self.board, pos).count() > 0
+                    {
+                        has_moves = true;
+                        break 'outer;
                     }
                 }
             }
         }
-        if moves.len() == 0 {
+        if !has_moves {
             if piece::util::threatened_at(
                 self.board.get_king_position(self.board.next_to_move()),
                 &[],

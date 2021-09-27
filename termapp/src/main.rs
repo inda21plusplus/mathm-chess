@@ -2,7 +2,10 @@ use chess_engine::{piece, Board, Game, GameState, Move, Position};
 use std::{io::BufRead, str::FromStr};
 
 fn main() {
-    let mut game = Game::new(Board::default());
+    let mut game = Game::new(
+        Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+            .unwrap(),
+    );
     print!("{}", game.board().to_string());
     let stdin = std::io::stdin();
     let mut lines = stdin.lock().lines().map(|line| line.unwrap());
@@ -20,8 +23,7 @@ fn main() {
                 Some(piece) => println!(
                     "{}",
                     piece
-                        .get_moves(game.board(), pos)
-                        .iter()
+                        .moves(game.board(), pos)
                         .fold(String::new(), |acc, p| format!("{} {}", acc, p))
                 ),
                 None => {}

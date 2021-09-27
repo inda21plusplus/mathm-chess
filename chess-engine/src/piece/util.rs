@@ -193,16 +193,6 @@ impl<'b> Moves<'b> {
 impl<'b> Iterator for Moves<'b> {
     type Item = Position;
     fn next(&mut self) -> Option<Self::Item> {
-        let checkcheck = |pos| {
-            !threatened_at(
-                self.board.get_king_position(self.color),
-                &[self.from],
-                &[pos],
-                self.color,
-                self.board,
-            )
-        };
-
         loop {
             let dir = self.dirs.get(self.dir_index as usize)?;
             let pos = match Position::new_i8(
@@ -220,16 +210,32 @@ impl<'b> Iterator for Moves<'b> {
             break match self.board[pos].map(|p| p.color) {
                 None => {
                     self.dist += 1;
+                    if threatened_at(
+                        self.board.get_king_position(self.color),
+                        &[self.from],
+                        &[pos],
+                        self.color,
+                        self.board,
+                    ) {
+                        continue;
+                    }
                     Some(pos)
                 }
                 Some(c) => {
                     self.dir_index += 1;
                     self.dist = 1;
-                    if c == self.color {
+                    if c == self.color
+                        || threatened_at(
+                            self.board.get_king_position(self.color),
+                            &[self.from],
+                            &[pos],
+                            self.color,
+                            self.board,
+                        )
+                    {
                         continue;
-                    } else {
-                        Some(pos)
                     }
+                    Some(pos)
                 }
             };
         }

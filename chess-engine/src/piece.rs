@@ -27,6 +27,10 @@ pub enum Kind {
 pub enum Moves<'b> {
     Pawn(pawn::Moves<'b>),
     Rook(rook::Moves<'b>),
+    Knight(knight::Moves<'b>),
+    Bishop(bishop::Moves<'b>),
+    Queen(queen::Moves<'b>),
+    King(king::Moves<'b>),
 }
 
 impl<'b> Iterator for Moves<'b> {
@@ -35,6 +39,10 @@ impl<'b> Iterator for Moves<'b> {
         match self {
             Self::Pawn(moves) => moves.next(),
             Self::Rook(moves) => moves.next(),
+            Self::Knight(moves) => moves.next(),
+            Self::Bishop(moves) => moves.next(),
+            Self::Queen(moves) => moves.next(),
+            Self::King(moves) => moves.next(),
         }
     }
 }
@@ -82,7 +90,10 @@ impl Piece {
         match self.kind {
             Kind::Pawn => Moves::Pawn(pawn::Moves::new(board, from)),
             Kind::Rook => Moves::Rook(rook::Moves::new(board, from)),
-            _ => unimplemented!(),
+            Kind::Knight => Moves::Knight(knight::Moves::new(board, from)),
+            Kind::Bishop => Moves::Bishop(bishop::Moves::new(board, from)),
+            Kind::Queen => Moves::Queen(queen::Moves::new(board, from)),
+            Kind::King => Moves::King(king::Moves::new(board, from)),
         }
     }
     /// Returns whether the piece at `move_.from` legally can move to
