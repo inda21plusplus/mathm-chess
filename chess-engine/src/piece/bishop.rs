@@ -1,6 +1,6 @@
 use crate::{Board, Color, Position};
 
-use super::util::{self, floating_checks, floating_moves};
+use super::util::{self, floating_checks};
 
 const DELTAS: &[(i8, i8)] = &[(1, 1), (1, -1), (-1, -1), (-1, 1)];
 
@@ -21,8 +21,4 @@ impl<'b> Iterator for Moves<'b> {
 
 pub fn checks(at: Position, color: Color, board: &Board) -> bool {
     floating_checks(DELTAS, at, color, board)
-}
-
-pub fn append_moves(board: &Board, from: Position, dst: &mut Vec<Position>) {
-    floating_moves(DELTAS, board, from, dst)
 }

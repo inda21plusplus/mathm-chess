@@ -1,4 +1,4 @@
-use crate::{Board, Color, Error, Move, Position};
+use crate::{Board, Color, Error, Position};
 
 mod bishop;
 mod king;
@@ -94,43 +94,6 @@ impl Piece {
             Kind::Bishop => Moves::Bishop(bishop::Moves::new(board, from)),
             Kind::Queen => Moves::Queen(queen::Moves::new(board, from)),
             Kind::King => Moves::King(king::Moves::new(board, from)),
-        }
-    }
-    /// Returns whether the piece at `move_.from` legally can move to
-    /// `move_.to`.
-    #[deprecated]
-    pub fn can_move(&self, move_: Move, board: &Board) -> bool {
-        // if in check:
-        //     if only one piece is checking king:
-        //         either:
-        //             must capture checker
-        //         or:
-        //             must place oneself in the way
-        //     else:
-        //         must move king
-        //
-        // else:
-        //     avoid revealed checks
-
-        #[allow(deprecated)]
-        self.get_moves(board, move_.from).contains(&move_.to)
-    }
-    #[deprecated]
-    pub fn get_moves(&self, board: &Board, from: Position) -> Vec<Position> {
-        let mut ret = vec![];
-        #[allow(deprecated)]
-        self.append_moves(board, from, &mut ret);
-        ret
-    }
-    #[deprecated]
-    pub fn append_moves(&self, board: &Board, from: Position, dst: &mut Vec<Position>) {
-        match self.kind {
-            Kind::Pawn => dst.extend(self.moves(board, from)),
-            Kind::Rook => rook::append_moves(board, from, dst),
-            Kind::Knight => knight::append_moves(board, from, dst),
-            Kind::Bishop => bishop::append_moves(board, from, dst),
-            Kind::Queen => queen::append_moves(board, from, dst),
-            Kind::King => king::append_moves(board, from, dst),
         }
     }
     pub fn checks(&self, at: Position, board: &Board) -> bool {
