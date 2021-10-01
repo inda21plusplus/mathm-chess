@@ -6,10 +6,9 @@ use super::Kind;
 ///
 /// Note: Ignores en passant rules.
 ///
-/// If `ignore_piece_at` is `Some`, that square will be treated as empty.
+/// All positions in `treat_as_empty` will be treated as if nothing was there.
 ///
-/// If `treat_pos_as_wall` is `Some`, a capture that require moving over that
-/// square wont count.
+/// All positions in `treat_as_occupied` will be treated as if something with `color` stood there.
 ///
 /// Also, the piece in question does not have to be at `position` in `board`.
 pub fn threatened_at(
@@ -33,7 +32,7 @@ pub fn threatened_at(
             Some(pos) => pos,
             None => continue,
         };
-        if treat_as_empty.contains(&pos) {
+        if treat_as_empty.contains(&pos) || treat_as_occupied.contains(&pos) {
             continue;
         }
         if board[pos].map_or(false, |piece| {
@@ -67,12 +66,10 @@ pub fn threatened_at(
                 break;
             }
             if let Some(piece) = board[pos] {
-                if piece.color == color {
-                    break;
-                }
-                if piece.kind == k || piece.kind == Kind::Queen {
+                if piece.color != color && (piece.kind == k || piece.kind == Kind::Queen) {
                     return true;
                 }
+                break;
             }
         }
     }
@@ -81,7 +78,7 @@ pub fn threatened_at(
             Some(pos) => pos,
             None => continue,
         };
-        if treat_as_empty.contains(&pos) {
+        if treat_as_empty.contains(&pos) || treat_as_occupied.contains(&pos) {
             continue;
         }
         if board[pos].map_or(false, |piece| {
@@ -104,7 +101,7 @@ pub fn threatened_at(
             Some(pos) => pos,
             None => continue,
         };
-        if treat_as_empty.contains(&pos) {
+        if treat_as_empty.contains(&pos) || treat_as_occupied.contains(&pos) {
             continue;
         }
         if board[pos].map_or(false, |piece| {

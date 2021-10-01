@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use crate::{piece, Board, Error};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Move {
     pub from: Position,
     pub to: Position,
@@ -156,7 +156,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Position {
     file: u8,
     rank: u8,
