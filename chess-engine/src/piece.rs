@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{Board, Color, Error, Position};
 
 mod bishop;
@@ -128,6 +130,16 @@ impl Kind {
             Self::Knight => 'N',
             Self::Queen => 'Q',
             Self::King => 'K',
+        }
+    }
+}
+
+impl FromStr for Kind {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.chars().next() {
+            Some(c) => Self::from_name(c),
+            None => Err(Error::ParsingError),
         }
     }
 }
