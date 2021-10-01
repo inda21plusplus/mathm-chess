@@ -7,6 +7,14 @@ fn arabic_parsing() {
         ("h5h1", ((7, 3).into(), (7, 7).into()).into()),
         ("a1h8", ((0, 7).into(), (7, 0).into()).into()),
         ("b5a7", ((1, 3).into(), (0, 1).into()).into()),
+        (
+            "a2h8q",
+            ((0, 6).into(), (7, 0).into(), piece::Kind::Queen).into(),
+        ),
+        (
+            "e7e8n",
+            ((4, 1).into(), (4, 0).into(), piece::Kind::Knight).into(),
+        ),
     ] {
         assert_eq!(Move::arabic(input), Ok(output), "at: {}", input);
     }
@@ -14,10 +22,12 @@ fn arabic_parsing() {
 
 #[test]
 fn arabic_parsing_fails() {
-    assert!(matches!(Move::arabic("a4a"), Err(Error::ParsingError),));
-    assert!(matches!(Move::arabic("i2a3"), Err(Error::ParsingError),));
-    assert!(matches!(Move::arabic("a2u3"), Err(Error::ParsingError),));
-    assert!(matches!(Move::arabic("a4a4 "), Err(Error::ParsingError),));
+    assert!(matches!(Move::arabic("a4a"), Err(Error::ParsingError)));
+    assert!(matches!(Move::arabic("i2a3"), Err(Error::ParsingError)));
+    assert!(matches!(Move::arabic("a2u3"), Err(Error::ParsingError)));
+    assert!(matches!(Move::arabic("a4a4 "), Err(Error::ParsingError)));
+    assert!(matches!(Move::arabic(" a4a4"), Err(Error::ParsingError)));
+    assert!(matches!(Move::arabic("a4a4l"), Err(Error::ParsingError)));
 }
 
 #[test]
@@ -94,7 +104,7 @@ fn perft_2() {
 fn perft_3() {
     let game = Game::new(Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap());
     assert_eq!(14, perft(game.clone(), 1));
-    // assert_eq!(191, perft(game.clone(), 2));
+    assert_eq!(191, perft(game.clone(), 2));
     // assert_eq!(2812, perft(game.clone(), 3));
 }
 
@@ -109,15 +119,15 @@ fn perft_4() {
     // assert_eq!(9467, perft(game.clone(), 3));
 }
 
-// #[test]
-// fn perft_5() {
-//     let game = Game::new(
-//         Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap(),
-//     );
-//     assert_eq!(44, perft(game.clone(), 1));
-//     // assert_eq!(1486, perft(game.clone(), 2));
-//     // assert_eq!(62379, perft(game.clone(), 3));
-// }
+#[test]
+fn perft_5() {
+    let game = Game::new(
+        Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap(),
+    );
+    assert_eq!(44, perft(game.clone(), 1));
+    assert_eq!(1486, perft(game.clone(), 2));
+    // assert_eq!(62379, perft(game.clone(), 3));
+}
 
 #[test]
 fn perft_6() {
@@ -131,7 +141,7 @@ fn perft_6() {
 }
 
 #[test]
-fn board_to_fen() {
+fn few_simple_moves() {
     let mut game = Game::new(Board::default());
     assert_eq!(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -139,7 +149,7 @@ fn board_to_fen() {
     );
     assert_eq!(
         Ok(GameState::Ongoing),
-        game.make_move(Move::arabic("e2e4").unwrap(), || unreachable!())
+        game.make_move(Move::arabic("e2e4").unwrap())
     );
     assert_eq!(
         "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
@@ -147,7 +157,7 @@ fn board_to_fen() {
     );
     assert_eq!(
         Ok(GameState::Ongoing),
-        game.make_move(Move::arabic("c7c5").unwrap(), || unreachable!())
+        game.make_move(Move::arabic("c7c5").unwrap())
     );
     assert_eq!(
         "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
@@ -155,7 +165,7 @@ fn board_to_fen() {
     );
     assert_eq!(
         Ok(GameState::Ongoing),
-        game.make_move(Move::arabic("g1f3").unwrap(), || unreachable!())
+        game.make_move(Move::arabic("g1f3").unwrap())
     );
     assert_eq!(
         "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",

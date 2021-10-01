@@ -10,6 +10,7 @@ pub enum Error {
     ParsingError,
     FenError(FenError),
     InvalidGameState,
+    RequiresPromotion,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,6 +39,7 @@ impl fmt::Display for Error {
             Self::ParsingError => write!(f, "Parsing error"),
             Self::FenError(err) => write!(f, "Fen parsing error at {} part", err),
             Self::InvalidGameState => write!(f, "Invalid game state"),
+            Self::RequiresPromotion => write!(f, "Move requires specifying promoted piece kind"),
         }
     }
 }

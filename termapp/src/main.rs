@@ -28,7 +28,7 @@ fn main() {
             continue;
         }
 
-        let m = match Move::arabic(line.trim()) {
+        let mut m = match Move::arabic(line.trim()) {
             Ok(m) => m,
             Err(err) => {
                 println!("{}", err);
@@ -36,15 +36,19 @@ fn main() {
             }
         };
 
-        match game.make_move(m, || loop {
-            break match piece::Kind::from_name(lines.next().unwrap().chars().next().unwrap()) {
-                Ok(kind) => kind,
-                Err(err) => {
-                    println!("{}", err);
-                    continue;
-                }
-            };
-        }) {
+        if game.missing_promotion(m) {
+            m.promotion = loop {
+                break match piece::Kind::from_name(lines.next().unwrap().chars().next().unwrap()) {
+                    Ok(kind) => Some(kind),
+                    Err(err) => {
+                        println!("{}", err);
+                        continue;
+                    }
+                };
+            }
+        }
+
+        match game.make_move(m) {
             Ok(GameState::Ongoing) => (),
             Ok(GameState::Draw) => {
                 println!("Draw!");

@@ -6,11 +6,26 @@ use crate::{piece, Board, Error};
 pub struct Move {
     pub from: Position,
     pub to: Position,
+    pub promotion: Option<piece::Kind>,
 }
 
 impl From<(Position, Position)> for Move {
     fn from((from, to): (Position, Position)) -> Self {
-        Self { from, to }
+        Self {
+            from,
+            to,
+            promotion: None,
+        }
+    }
+}
+
+impl From<(Position, Position, piece::Kind)> for Move {
+    fn from((from, to, promotion): (Position, Position, piece::Kind)) -> Self {
+        Self {
+            from,
+            to,
+            promotion: Some(promotion),
+        }
     }
 }
 
@@ -20,12 +35,17 @@ impl Move {
     /// If `s` is not valid arabic notation, `Err(Error::ParsingError)` is returned.
     pub fn arabic(s: &str) -> Result<Self, Error> {
         match s.len() {
+            0..=3 => Err(Error::ParsingError),
             4 => Ok(Self {
                 from: s[..2].parse()?,
                 to: s[2..4].parse()?,
+                promotion: None,
             }),
-            5.. => Err(Error::ParsingError),
-            0..=3 => Err(Error::ParsingError),
+            5.. => Ok(Self {
+                from: s[..2].parse()?,
+                to: s[2..4].parse()?,
+                promotion: Some(s[4..5].parse()?),
+            }),
             _ => unreachable!(),
         }
     }
@@ -122,6 +142,18 @@ impl Color {
     pub fn backwards(&self) -> i8 {
         -self.forwards()
     }
+    pub fn home_rank(&self) -> u8 {
+        match self {
+            Self::White => 7,
+            Self::Black => 0,
+        }
+    }
+    pub fn home_pawn_rank(&self) -> u8 {
+        match self {
+            Self::White => 6,
+            Self::Black => 1,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -163,6 +195,12 @@ impl Position {
     pub fn rank(&self) -> u8 {
         self.rank
     }
+    pub fn get_file(c: char) -> u8 {
+        c as u8 + b'a'
+    }
+    pub fn get_rank(c: char) -> u8 {
+        b'8' - c as u8
+    }
 }
 
 impl From<(u8, u8)> for Position {
@@ -182,8 +220,8 @@ impl FromStr for Position {
             c @ Some(b'a'..=b'h') => c.unwrap() - b'a',
             _ => return Err(Error::ParsingError),
         };
-        let rank = match s[1] {
-            c @ b'1'..=b'8' => b'8' - c,
+        let rank = match s.get(1) {
+            c @ Some(b'1'..=b'8') => b'8' - c.unwrap(),
             _ => return Err(Error::ParsingError),
         };
         Ok(Self { file, rank })

@@ -6,9 +6,13 @@ use crate::{piece, Board, Color, Error, Move, Piece, Position};
 ///
 /// let mut game = Game::new(Board::default());
 /// loop {
-///     # fn get_move() -> Move { Move { from: (0, 0).into(), to: (0, 0).into() } }
+///     # fn get_move() -> Move { ((0, 0).into(), (0, 0).into()).into() }
 ///     # fn get_promotion() -> piece::Kind { piece::Kind::Queen }
-///     match game.make_move(get_move(), || get_promotion()) {
+///     let mut move_ = get_move();
+///     if game.missing_promotion(move_) {
+///         move_.promotion = Some(get_promotion());
+///     }
+///     match game.make_move(move_) {
 ///         Ok(GameState::Ongoing) => {}
 ///         Ok(s) => {
 ///             println!("{:?}", s);
@@ -40,10 +44,29 @@ impl Game {
     pub fn board(&self) -> &Board {
         &self.board
     }
-    pub fn make_move<M, P>(&mut self, move_: M, pawn_promotion: P) -> Result<GameState, Error>
+    /// Indicates if the is missing the additional `promotion` field when it's
+    /// needed. If it's not needed for the move, or if it's already set, false
+    /// is returned.
+    ///
+    /// For invalid moves, there is no guarantee about what this returns. It
+    /// will probably be `false` though.
+    pub fn missing_promotion<M>(&self, move_: M) -> bool
     where
         M: Into<Move>,
-        P: FnOnce() -> piece::Kind,
+    {
+        let move_: Move = move_.into();
+        if move_.promotion.is_some() {
+            return false;
+        }
+        let piece = match self.board[move_.from] {
+            Some(piece) => piece,
+            None => return false,
+        };
+        piece.kind == piece::Kind::Pawn && move_.to.rank() == piece.color.other().home_rank()
+    }
+    pub fn make_move<M>(&mut self, move_: M) -> Result<GameState, Error>
+    where
+        M: Into<Move>,
     {
         let move_ = move_.into();
         if let Some(piece) = self.board[move_.from] {
@@ -56,16 +79,15 @@ impl Game {
         } else {
             return Err(Error::NoPieceToMove);
         }
-        self.make_move_unchecked(move_, pawn_promotion)
+        self.make_move_unchecked(move_)
     }
     /// Make the move without checking if the piece at `move_.from` exists or
     /// can move to `move_.to` legally.
     ///
     /// `checks` signifies whether the opponent will be in check after the move.
-    fn make_move_unchecked<M, P>(&mut self, move_: M, pawn_promotion: P) -> Result<GameState, Error>
+    fn make_move_unchecked<M>(&mut self, move_: M) -> Result<GameState, Error>
     where
         M: Into<Move>,
-        P: FnOnce() -> piece::Kind,
     {
         let move_: Move = move_.into();
         let piece = self.board[move_.from].unwrap();
@@ -76,7 +98,13 @@ impl Game {
 
         // Handle promotion
         if piece.kind == piece::Kind::Pawn && (move_.to.rank() == 7 || move_.to.rank() == 0) {
-            let promoted = Piece::new(current_color, pawn_promotion());
+            let promoted_kind = match move_.promotion {
+                None | Some(piece::Kind::King) | Some(piece::Kind::Pawn) => {
+                    return Err(Error::RequiresPromotion)
+                }
+                Some(kind) => kind,
+            };
+            let promoted = Piece::new(current_color, promoted_kind);
             self.board[move_.to] = Some(promoted);
         }
 
@@ -99,6 +127,12 @@ impl Game {
             (piece::Kind::Rook, 0) => self.board.cannot_castle_queenside(current_color),
             (piece::Kind::Rook, 7) => self.board.cannot_castle_kingside(current_color),
             _ => {}
+        }
+        if move_.to == Position::new_unchecked(0, current_color.other().home_rank()) {
+            self.board.cannot_castle_queenside(current_color.other());
+        }
+        if move_.to == Position::new_unchecked(7, current_color.other().home_rank()) {
+            self.board.cannot_castle_kingside(current_color.other());
         }
 
         // Handle en passant capture
