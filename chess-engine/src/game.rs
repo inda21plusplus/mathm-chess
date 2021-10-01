@@ -64,6 +64,28 @@ impl Game {
         };
         piece.kind == piece::Kind::Pawn && move_.to.rank() == piece.color.other().home_rank()
     }
+    pub fn all_legal_moves<'s>(&'s self) -> impl Iterator<Item = Move> + 's {
+        (0..8)
+            .map(move |rank| {
+                (0..8).map(move |file| {
+                    let from = Position::new_unchecked(file, rank);
+                    (from, self.board()[from])
+                })
+            })
+            .flatten()
+            .flat_map(move |(from, piece)| match piece {
+                Some(piece) if piece.color == self.board().next_to_move() => Some((from, piece)),
+                _ => None,
+            })
+            .map(move |(from, piece)| {
+                piece.moves(self.board(), from).map(move |to| Move {
+                    from,
+                    to,
+                    promotion: None,
+                })
+            })
+            .flatten()
+    }
     pub fn make_move<M>(&mut self, move_: M) -> Result<GameState, Error>
     where
         M: Into<Move>,

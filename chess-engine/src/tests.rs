@@ -59,22 +59,26 @@ fn perft(game: Game, depth: usize) -> usize {
         return 1;
     }
     let mut ans = 0;
-    for rank in 0..8 {
-        for file in 0..8 {
-            let pos = Position::new_unchecked(file, rank);
-            if let Some(piece) = game.board()[pos] {
-                if piece.color != game.board().next_to_move() {
-                    continue;
-                }
-                for to in piece.moves(game.board(), pos) {
-                    let mut g = Game::new(game.board().clone());
-                    g.make_move(Move { from: pos, to }, || panic!()).unwrap();
-                    ans += perft(g, depth - 1);
-                }
+    for mut move_ in game.all_legal_moves() {
+        if game.missing_promotion(move_) {
+            for kind in [
+                piece::Kind::Bishop,
+                piece::Kind::Knight,
+                piece::Kind::Queen,
+                piece::Kind::Rook,
+            ] {
+                move_.promotion = Some(kind);
+                let mut g = Game::new(game.board().clone());
+                g.make_move(move_).unwrap();
+                ans += perft(g, depth - 1);
             }
+        } else {
+            let mut g = Game::new(game.board().clone());
+            g.make_move(move_).unwrap();
+            ans += perft(g, depth - 1);
         }
     }
-    return ans;
+    ans
 }
 
 #[test]
