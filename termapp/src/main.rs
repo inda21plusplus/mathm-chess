@@ -1,10 +1,33 @@
 use chess_engine::{piece, Board, Game, GameState, Move, Position};
-use std::{io::BufRead, str::FromStr};
+use std::{
+    io::{BufRead, Write},
+    str::FromStr,
+};
 
 fn main() {
-    let mut game = Game::new(Board::default());
-    print!("{}", game.board().to_string());
     let stdin = std::io::stdin();
+
+    let mut fen = String::new();
+    let board = loop {
+        print!("Initial board state (empty for none) > ");
+        std::io::stdout().lock().flush().unwrap();
+        fen.clear();
+        stdin.read_line(&mut fen).unwrap();
+        break if fen == "" {
+            Board::default()
+        } else {
+            match Board::from_fen(&fen) {
+                Ok(board) => board,
+                Err(err) => {
+                    println!("{}", err);
+                    continue;
+                }
+            }
+        };
+    };
+
+    let mut game = Game::new(board);
+    print!("{}", game.board().to_string());
     let mut lines = stdin.lock().lines().map(|line| line.unwrap());
     while let Some(line) = lines.next() {
         let line = line.trim();
