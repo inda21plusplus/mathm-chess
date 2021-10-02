@@ -6,7 +6,7 @@ mod board;
 mod error;
 mod game;
 pub mod piece;
-mod util;
+pub mod util;
 
 pub use board::Board;
 pub use error::Error;

@@ -216,4 +216,8 @@ impl Game {
             Ok(GameState::Ongoing)
         }
     }
+    
+    pub fn unsafe_set_piece(&mut self, pos: Position, piece: Piece) {
+        self.board[pos] = Some(piece);
+    }
 }

@@ -4,6 +4,7 @@ use super::util::{self, floating_checks};
 
 const DELTAS: &[(i8, i8)] = &[(0, 1), (1, 0), (0, -1), (-1, 0)];
 
+
 pub struct Moves<'b>(util::Moves<'b>);
 
 impl<'b> Moves<'b> {
