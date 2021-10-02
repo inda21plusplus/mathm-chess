@@ -3,4 +3,5 @@
 members = [
     "chess-engine",
     "termapp",
+    "gui",
 ]
