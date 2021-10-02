@@ -10,7 +10,7 @@ mod queen;
 mod rook;
 pub mod util;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Piece {
     pub color: Color,
     pub kind: Kind,

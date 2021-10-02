@@ -1,4 +1,4 @@
-use chess_engine::{piece, Board, Game, GameState, Move, Position};
+use chess_engine::{piece, Board, BoardState, Move, Position};
 use std::{
     io::{BufRead, Write},
     str::FromStr,
@@ -8,7 +8,7 @@ fn main() {
     let stdin = std::io::stdin();
 
     let mut fen = String::new();
-    let board = loop {
+    let mut board = loop {
         print!("Initial board state (empty for none) > ");
         std::io::stdout().lock().flush().unwrap();
         fen.clear();
@@ -26,8 +26,7 @@ fn main() {
         };
     };
 
-    let mut game = Game::new(board);
-    print!("{}", game.board().to_string());
+    print!("{}", board.to_string());
     let mut lines = stdin.lock().lines().map(|line| line.unwrap());
     while let Some(line) = lines.next() {
         let line = line.trim();
@@ -39,11 +38,11 @@ fn main() {
                     continue;
                 }
             };
-            match game.board()[pos] {
+            match board[pos] {
                 Some(piece) => println!(
                     "{}",
                     piece
-                        .moves(game.board(), pos)
+                        .moves(&board, pos)
                         .fold(String::new(), |acc, p| format!("{} {}", acc, p))
                 ),
                 None => {}
@@ -59,7 +58,7 @@ fn main() {
             }
         };
 
-        if game.missing_promotion(m) {
+        if board.missing_promotion(m) {
             m.promotion = loop {
                 break match piece::Kind::from_name(lines.next().unwrap().chars().next().unwrap()) {
                     Ok(kind) => Some(kind),
@@ -71,13 +70,13 @@ fn main() {
             }
         }
 
-        match game.make_move(m) {
-            Ok(GameState::Ongoing) => (),
-            Ok(GameState::Draw) => {
+        match board.make_move(m) {
+            Ok(BoardState::Normal) => (),
+            Ok(BoardState::Draw) => {
                 println!("Draw!");
                 return;
             }
-            Ok(GameState::Checkmate { winner }) => {
+            Ok(BoardState::Checkmate { winner }) => {
                 println!("Checkmate! {:?} wins", winner);
                 return;
             }
@@ -86,6 +85,6 @@ fn main() {
                 continue;
             }
         };
-        print!("{}", game.board().to_string());
+        print!("{}", board.to_string());
     }
 }
