@@ -5,6 +5,8 @@ use bevy_inspector_egui as bi;
 
 use chess_engine as c;
 
+mod entities;
+
 // colors:
 //     227, 237, 234
 //     201, 187, 168
@@ -22,7 +24,7 @@ fn main() {
         .insert_resource(b::Msaa { samples: 4 })
         .insert_resource(c::Board::default())
         .add_plugins(b::DefaultPlugins)
-        // .add_plugin(bi::WorldInspectorPlugin::default())
+        .add_plugin(bi::WorldInspectorPlugin::default())
         .add_event::<MoveMadeEvent>()
         .init_resource::<PieceMaterials>()
         .add_startup_system(spawn_game_ui_s.system())
@@ -33,16 +35,15 @@ fn main() {
 }
 
 const PIECE_Z_OFFSET: f32 = 0.1;
+const PIECE_LERP_SPEED: f32 = 40.;
 
 struct Square;
 #[derive(Clone, Copy)]
 struct IsOnSquare(b::Entity);
 struct MoveMadeEvent(c::Move);
-struct PieceMaterials(HashMap<c::Piece, b::Handle<b::ColorMaterial>>);
+pub struct PieceMaterials(HashMap<c::Piece, b::Handle<b::ColorMaterial>>);
 
 fn lerp_piece_positions_s(
-    // mut commands: b::Commands,
-    // board: b::Res<c::Board>,
     time: b::Res<b::Time>,
     square_q: b::Query<&b::Transform, (b::With<Square>, b::Without<c::Piece>)>,
     mut piece_q: b::Query<(&IsOnSquare, &mut b::Transform), b::With<c::Piece>>,
@@ -56,11 +57,11 @@ fn lerp_piece_positions_s(
             piece_transform.translation = target;
             piece_transform.rotation = b::Quat::from_axis_angle(b::Vec3::X, 0.);
         } else {
-            let delta = differance.normalize_or_zero() * time.delta_seconds() * 50.;
+            let delta = differance.normalize_or_zero() * time.delta_seconds() * PIECE_LERP_SPEED;
             piece_transform.translation += delta;
 
             piece_transform.rotation =
-                b::Quat::from_axis_angle(b::Vec3::new(1., 1., 1.), differance.z / 10.);
+                b::Quat::from_axis_angle(b::Vec3::new(0., 0., 1.), differance.z / 10.);
         }
     }
 }
@@ -89,7 +90,6 @@ fn update_piece_squares_s(
     }
 }
 
-// piece_materials: b::Res<b::Assets<b::ColorMaterial>>,
 fn create_pieces_s(
     mut commands: b::Commands,
     board: b::Res<c::Board>,
@@ -102,20 +102,7 @@ fn create_pieces_s(
 
     for (entity, &transform, &position) in square_q.iter() {
         if let Some(piece) = board[position] {
-            let mut piece_transform = transform;
-            piece_transform.translation.z += PIECE_Z_OFFSET;
-            piece_transform.translation.x += (rand::random::<f32>() - 0.5) * 100.;
-            piece_transform.translation.y += (rand::random::<f32>() - 0.5) * 100.;
-            piece_transform.translation.z += rand::random::<f32>() * 200.;
-            commands
-                .spawn_bundle(b::SpriteBundle {
-                    sprite: b::Sprite::new(b::Vec2::new(10., 10.)),
-                    transform: piece_transform,
-                    material: piece_materials.0.get(&piece).unwrap().clone(),
-                    ..Default::default()
-                })
-                .insert(IsOnSquare(entity))
-                .insert(piece);
+            entities::spawn_piece(&mut commands, piece, &*piece_materials, transform, entity);
         }
     }
 }
@@ -137,20 +124,13 @@ fn spawn_game_ui_s(
     let black_material = materials.add(b::Color::rgb_u8(201, 187, 168).into());
     for rank in 0..8 {
         for file in 0..8 {
-            let material = if (rank + file) % 2 == 1 {
-                white_material.clone()
-            } else {
-                black_material.clone()
-            };
-            commands
-                .spawn_bundle(b::SpriteBundle {
-                    sprite: b::Sprite::new(b::Vec2::new(10., 10.)),
-                    material,
-                    transform: b::Transform::from_xyz(10. * file as f32, 10. * rank as f32, 0.),
-                    ..Default::default()
-                })
-                .insert(c::Position::new_unchecked(file, rank))
-                .insert(Square);
+            let position = c::Position::new_unchecked(file, rank);
+            entities::spawn_square(
+                &mut commands,
+                position,
+                white_material.clone(),
+                black_material.clone(),
+            );
         }
     }
 }
