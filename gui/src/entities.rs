@@ -20,6 +20,10 @@ pub fn spawn_piece(
         .spawn_bundle(b::SpriteBundle {
             sprite: b::Sprite::new(b::Vec2::new(10., 10.)),
             transform: piece_transform,
+            visible: b::Visible {
+                is_transparent: true,
+                is_visible: true,
+            },
             material: piece_materials.0.get(&piece).unwrap().clone(),
             ..Default::default()
         })
@@ -27,26 +31,21 @@ pub fn spawn_piece(
         .insert(piece);
 }
 
-pub fn spawn_square(
-    commands: &mut b::Commands,
-    position: c::Position,
-    white_material: b::Handle<b::ColorMaterial>,
-    black_material: b::Handle<b::ColorMaterial>,
-) {
+pub fn spawn_square(commands: &mut b::Commands, position: c::Position) {
     let file = position.file();
     let rank = position.rank();
-    let material = if (rank + file) % 2 == 1 {
-        white_material
+    let color = if (rank + file) % 2 == 1 {
+        c::Color::White
     } else {
-        black_material
+        c::Color::Black
     };
     commands
         .spawn_bundle(b::SpriteBundle {
             sprite: b::Sprite::new(b::Vec2::new(10., 10.)),
-            material,
             transform: b::Transform::from_xyz(10. * file as f32, 70. - 10. * rank as f32, 0.),
             ..Default::default()
         })
         .insert(position)
-        .insert(Square);
+        .insert(color)
+        .insert(Square::Normal);
 }

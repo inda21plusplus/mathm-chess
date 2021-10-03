@@ -10,3 +10,6 @@ chess-engine = { path = "../chess-engine" }
 bevy = "0.5"
 bevy-inspector-egui = "0.6"
 rand = "0.8"
+
+[dev-dependencies]
+bevy = { version = "0.5", features = ["dynamic"] }

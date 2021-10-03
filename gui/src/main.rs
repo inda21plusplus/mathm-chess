@@ -1,7 +1,10 @@
-use std::{collections::HashMap, f32::consts::PI};
+use std::collections::HashMap;
 
-use bevy::prelude::{self as b, IntoSystem};
-use bevy_inspector_egui as bi;
+use bevy::{
+    prelude::{self as b, DespawnRecursiveExt, IntoSystem},
+    utils::HashSet,
+};
+// use bevy_inspector_egui as bi;
 
 use chess_engine as c;
 
@@ -21,27 +24,108 @@ fn main() {
             ..Default::default()
         })
         .insert_resource(b::ClearColor(b::Color::rgb(0.1, 0.1, 0.1)))
-        .insert_resource(b::Msaa { samples: 4 })
+        // .insert_resource(b::Msaa { samples: 4 })
         .insert_resource(c::Board::default())
         .add_plugins(b::DefaultPlugins)
-        .add_plugin(bi::WorldInspectorPlugin::default())
+        // .add_plugin(bi::WorldInspectorPlugin::default())
         .add_event::<MoveMadeEvent>()
         .init_resource::<PieceMaterials>()
-        .add_startup_system(spawn_game_ui_s.system())
+        .add_startup_system(spawn_game_tiles_s.system())
         .add_system(lerp_piece_positions_s.system())
         .add_system(update_piece_squares_s.system())
         .add_system(create_pieces_s.system())
+        // .add_system(random_moves_s.system())
+        .add_system(mouse_hover_highlights_s.system())
+        .add_system(set_square_colors_s.system())
         .run();
 }
 
 const PIECE_Z_OFFSET: f32 = 0.1;
-const PIECE_LERP_SPEED: f32 = 40.;
+const PIECE_LERP_SPEED: f32 = 80.;
 
-struct Square;
+enum Square {
+    Normal,
+    Movable,
+    Capturable,
+}
 #[derive(Clone, Copy)]
 struct IsOnSquare(b::Entity);
 struct MoveMadeEvent(c::Move);
 pub struct PieceMaterials(HashMap<c::Piece, b::Handle<b::ColorMaterial>>);
+
+fn random_moves_s(
+    mut board: b::ResMut<c::Board>,
+    time: b::Res<b::Time>,
+    mut t: b::Local<f32>,
+    mut move_made_event: b::EventWriter<MoveMadeEvent>,
+) {
+    *t += time.delta_seconds();
+    if *t < 1. {
+        return;
+    }
+    *t -= 1.;
+
+    use rand::seq::SliceRandom;
+    let moves: Vec<c::Move> = board.all_legal_moves().collect();
+    if let Some(&move_) = moves.choose(&mut rand::thread_rng()) {
+        let _ = board.make_move(move_);
+        move_made_event.send(MoveMadeEvent(move_));
+    }
+}
+
+fn set_square_colors_s(
+    mut square_q: b::Query<
+        (&Square, &c::Color, &mut b::Handle<b::ColorMaterial>),
+        b::Changed<Square>,
+    >,
+    mut materials: b::ResMut<b::Assets<b::ColorMaterial>>,
+) {
+    for (square, color, mut material_h) in square_q.iter_mut() {
+        *material_h = materials.add(
+            match (square, color) {
+                (Square::Normal, c::Color::White) => b::Color::rgb_u8(153, 133, 109),
+                (Square::Normal, c::Color::Black) => b::Color::rgb_u8(201, 187, 168),
+                (Square::Movable, c::Color::White) => b::Color::rgb_u8(97, 114, 122),
+                (Square::Movable, c::Color::Black) => b::Color::rgb_u8(75, 116, 127),
+                (Square::Capturable, c::Color::White) => b::Color::rgb_u8(153, 133, 109),
+                (Square::Capturable, c::Color::Black) => b::Color::rgb_u8(153, 133, 109),
+            }
+            .into(),
+        );
+    }
+}
+
+fn mouse_hover_highlights_s(
+    mut cursor_events: b::EventReader<b::CursorMoved>,
+    board: b::Res<c::Board>,
+    windows: b::Res<b::Windows>,
+    mut square_q: b::Query<(&c::Position, &mut Square)>,
+) {
+    let window = windows.get_primary().unwrap();
+    if let Some(b::CursorMoved { mut position, .. }) = cursor_events.iter().last() {
+        position -= b::Vec2::new(window.width() / 2., window.height() / 2.);
+        position /= window.height();
+        position *= 4. / 0.48;
+        position.y *= -1.;
+        position += b::Vec2::new(4., 4.);
+        position = position.floor();
+        if let Some(position) = c::Position::new_i8(position.x as i8, position.y as i8) {
+            let destinations: HashSet<c::Position> = board[position]
+                .map_or(Default::default(), |p| p.moves(&*board, position).collect());
+            for (square_position, mut square) in square_q.iter_mut() {
+                if destinations.contains(square_position) {
+                    if board[*square_position].is_some() {
+                        *square = Square::Capturable;
+                    } else {
+                        *square = Square::Movable;
+                    }
+                } else {
+                    *square = Square::Normal;
+                }
+            }
+        }
+    }
+}
 
 fn lerp_piece_positions_s(
     time: b::Res<b::Time>,
@@ -67,24 +151,27 @@ fn lerp_piece_positions_s(
 }
 
 fn update_piece_squares_s(
-    square_q: b::Query<&c::Position, b::With<Square>>,
-    mut piece_q: b::Query<&mut IsOnSquare, b::With<c::Piece>>,
+    mut commands: b::Commands,
+    square_q: b::Query<(b::Entity, &c::Position), b::With<Square>>,
+    mut piece_q: b::Query<(b::Entity, &mut IsOnSquare), b::With<c::Piece>>,
     mut move_made_event: b::EventReader<MoveMadeEvent>,
 ) {
     for MoveMadeEvent(move_) in move_made_event.iter() {
-        let mut new_square = IsOnSquare(b::Entity::new(0));
-        for square in piece_q.iter_mut() {
-            let square_position = square_q.get(square.0).unwrap();
-            if *square_position == move_.to {
-                new_square = *square;
+        let mut new_square = b::Entity::new(0);
+        for (square_entity, &position) in square_q.iter() {
+            if position == move_.to {
+                new_square = square_entity;
                 break;
             }
         }
-        for mut square in piece_q.iter_mut() {
-            let square_position = square_q.get(square.0).unwrap();
+        assert_ne!(new_square.id(), 0);
+        for (piece_entity, mut square) in piece_q.iter_mut() {
+            let (_, square_position) = square_q.get(square.0).unwrap();
+            if *square_position == move_.to {
+                commands.entity(piece_entity).despawn_recursive();
+            }
             if *square_position == move_.from {
-                *square = new_square;
-                break;
+                square.0 = new_square;
             }
         }
     }
@@ -107,30 +194,19 @@ fn create_pieces_s(
     }
 }
 
-fn spawn_game_ui_s(
-    mut commands: b::Commands,
-    mut materials: b::ResMut<b::Assets<b::ColorMaterial>>,
-) {
+fn spawn_game_tiles_s(mut commands: b::Commands) {
     commands.spawn_bundle(b::PerspectiveCameraBundle {
         transform: b::Transform {
-            translation: b::Vec3::new(35., -40., 45.),
-            rotation: b::Quat::from_axis_angle(b::Vec3::X, PI * 0.3),
+            translation: b::Vec3::new(35., 35., 100.),
             ..Default::default()
         },
         ..Default::default()
     });
 
-    let white_material = materials.add(b::Color::rgb_u8(153, 133, 109).into());
-    let black_material = materials.add(b::Color::rgb_u8(201, 187, 168).into());
     for rank in 0..8 {
         for file in 0..8 {
             let position = c::Position::new_unchecked(file, rank);
-            entities::spawn_square(
-                &mut commands,
-                position,
-                white_material.clone(),
-                black_material.clone(),
-            );
+            entities::spawn_square(&mut commands, position);
         }
     }
 }
