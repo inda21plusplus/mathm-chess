@@ -1,7 +1,7 @@
 use std::{fmt, ops};
 
 use crate::{
-    piece::{self, util::threatened_at},
+    piece::{self, util::threatened_at, Moves},
     Color, Error, Move, Piece, Position,
 };
 
@@ -76,6 +76,13 @@ impl Board {
             None => return false,
         };
         piece.kind == piece::Kind::Pawn && move_.to.rank() == piece.color.other().home_rank()
+    }
+    pub fn moves_at_position(&self, position: Position) -> Moves {
+        if let Some(piece) = self[position] {
+            piece.moves(self, position)
+        } else {
+            Moves::None
+        }
     }
     pub fn all_legal_moves<'s>(&'s self) -> impl Iterator<Item = Move> + 's {
         (0..8)

@@ -37,11 +37,15 @@ fn main() {
         // .add_system(random_moves_s.system())
         .add_system(mouse_hover_highlights_s.system())
         .add_system(set_square_colors_s.system())
+        .add_system(pick_up_piece_s.system())
         .run();
 }
 
-const PIECE_Z_OFFSET: f32 = 0.1;
+const PIECE_Z_OFFSET: f32 = 1.0;
 const PIECE_LERP_SPEED: f32 = 80.;
+const CAMERA_POS_X: f32 = 35.;
+const CAMERA_POS_Y: f32 = 35.;
+const CAMERA_POS_Z: f32 = 100.;
 
 enum Square {
     Normal,
@@ -51,6 +55,7 @@ enum Square {
 #[derive(Clone, Copy)]
 struct IsOnSquare(b::Entity);
 struct MoveMadeEvent(c::Move);
+struct PickedUpPiece;
 pub struct PieceMaterials(HashMap<c::Piece, b::Handle<b::ColorMaterial>>);
 
 fn random_moves_s(
@@ -95,46 +100,104 @@ fn set_square_colors_s(
     }
 }
 
-fn mouse_hover_highlights_s(
-    mut cursor_events: b::EventReader<b::CursorMoved>,
+fn cursor_to_world_coordinates(window: &b::Window) -> b::Vec2 {
+    if let Some(pos) = window.cursor_position() {
+        (pos - b::Vec2::new(CAMERA_POS_X, CAMERA_POS_Y)) / window.height() * 0.48
+    } else {
+        b::Vec2::ZERO
+    }
+}
+
+fn get_square_position_under_cursor(window: &b::Window) -> Option<c::Position> {
+    if let Some(mut cursor_position) = window.cursor_position() {
+        cursor_position -= b::Vec2::new(window.width() / 2., window.height() / 2.);
+        cursor_position /= window.height();
+        cursor_position *= 4. / 0.48;
+        cursor_position.y *= -1.;
+        cursor_position += b::Vec2::new(4., 4.);
+        cursor_position = cursor_position.floor();
+        let position = c::Position::new_i8(cursor_position.x as i8, cursor_position.y as i8);
+        position
+    } else {
+        None
+    }
+}
+
+fn pick_up_piece_s(
+    mut commands: b::Commands,
     board: b::Res<c::Board>,
     windows: b::Res<b::Windows>,
-    mut square_q: b::Query<(&c::Position, &mut Square)>,
+    square_q: b::Query<&c::Position, b::With<Square>>,
+    piece_q: b::Query<(b::Entity, &IsOnSquare), b::With<c::Piece>>,
+    cursor_events: b::Res<b::Input<b::MouseButton>>,
 ) {
-    let window = windows.get_primary().unwrap();
-    if let Some(b::CursorMoved { mut position, .. }) = cursor_events.iter().last() {
-        position -= b::Vec2::new(window.width() / 2., window.height() / 2.);
-        position /= window.height();
-        position *= 4. / 0.48;
-        position.y *= -1.;
-        position += b::Vec2::new(4., 4.);
-        position = position.floor();
-        if let Some(position) = c::Position::new_i8(position.x as i8, position.y as i8) {
-            let destinations: HashSet<c::Position> = board[position]
-                .map_or(Default::default(), |p| p.moves(&*board, position).collect());
-            for (square_position, mut square) in square_q.iter_mut() {
-                if destinations.contains(square_position) {
-                    if board[*square_position].is_some() {
-                        *square = Square::Capturable;
-                    } else {
-                        *square = Square::Movable;
-                    }
-                } else {
-                    *square = Square::Normal;
-                }
+    if !cursor_events.just_pressed(b::MouseButton::Left) {
+        return;
+    }
+
+    let position = windows
+        .get_primary()
+        .map(|win| get_square_position_under_cursor(win))
+        .flatten();
+
+    if let Some(cursor_pos) = position {
+        for (piece_entity, square_entity) in piece_q.iter() {
+            let square_pos = square_q.get(square_entity.0).unwrap();
+            if *square_pos == cursor_pos {
+                commands.entity(piece_entity).insert(PickedUpPiece);
+                break;
             }
         }
     }
 }
 
+fn mouse_hover_highlights_s(
+    board: b::Res<c::Board>,
+    windows: b::Res<b::Windows>,
+    mut square_q: b::Query<(&c::Position, &mut Square)>,
+) {
+    let destinations: HashSet<c::Position> = windows
+        .get_primary()
+        .map(|win| get_square_position_under_cursor(win))
+        .flatten()
+        .map(|pos| board.moves_at_position(pos))
+        .map_or(Default::default(), |moves| moves.collect());
+    for (square_position, mut square) in square_q.iter_mut() {
+        if destinations.contains(square_position) {
+            if board[*square_position].is_some() {
+                *square = Square::Capturable;
+            } else {
+                *square = Square::Movable;
+            }
+        } else {
+            *square = Square::Normal;
+        }
+    }
+}
+
 fn lerp_piece_positions_s(
+    windows: b::Res<b::Windows>,
     time: b::Res<b::Time>,
     square_q: b::Query<&b::Transform, (b::With<Square>, b::Without<c::Piece>)>,
-    mut piece_q: b::Query<(&IsOnSquare, &mut b::Transform), b::With<c::Piece>>,
+    mut piece_q: b::Query<
+        (&IsOnSquare, &mut b::Transform, Option<&PickedUpPiece>),
+        b::With<c::Piece>,
+    >,
 ) {
-    for (square, mut piece_transform) in piece_q.iter_mut() {
+    for (square, mut piece_transform, is_picked_up) in piece_q.iter_mut() {
         let square_transform = square_q.get(square.0).unwrap();
-        let target = square_transform.translation + b::Vec3::new(0., 0., PIECE_Z_OFFSET);
+        let target = if is_picked_up.is_some() {
+            if let Some(target) = windows
+                .get_primary()
+                .map(|win| cursor_to_world_coordinates(win))
+            {
+                target.extend(piece_transform.translation.z)
+            } else {
+                continue;
+            }
+        } else {
+            square_transform.translation + b::Vec3::new(0., 0., PIECE_Z_OFFSET)
+        };
 
         let differance = target - piece_transform.translation;
         if differance.length() < 1. {
@@ -197,7 +260,7 @@ fn create_pieces_s(
 fn spawn_game_tiles_s(mut commands: b::Commands) {
     commands.spawn_bundle(b::PerspectiveCameraBundle {
         transform: b::Transform {
-            translation: b::Vec3::new(35., 35., 100.),
+            translation: b::Vec3::new(CAMERA_POS_X, CAMERA_POS_Y, CAMERA_POS_Z),
             ..Default::default()
         },
         ..Default::default()

@@ -33,6 +33,7 @@ pub enum Moves<'b> {
     Bishop(bishop::Moves<'b>),
     Queen(queen::Moves<'b>),
     King(king::Moves<'b>),
+    None,
 }
 
 impl<'b> Iterator for Moves<'b> {
@@ -45,6 +46,7 @@ impl<'b> Iterator for Moves<'b> {
             Self::Bishop(moves) => moves.next(),
             Self::Queen(moves) => moves.next(),
             Self::King(moves) => moves.next(),
+            Self::None => None,
         }
     }
 }
