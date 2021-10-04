@@ -1,308 +1,612 @@
-use std::collections::HashMap;
-
 use bevy::{
-    prelude::{self as b, DespawnRecursiveExt, IntoSystem},
-    utils::HashSet,
+    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+    render::camera::Camera,
+    ui::FocusPolicy,
 };
-// use bevy_inspector_egui as bi;
-
-use chess_engine as c;
-
-mod entities;
-
-// colors:
-//     227, 237, 234
-//     201, 187, 168
-//     153, 133, 109
-//     97, 114, 122
-//     75, 116, 127
+use chess_engine::{piece, Board, BoardState, Color as ChessColor, Move, Piece, Position};
+use std::collections::{HashMap, HashSet};
 
 fn main() {
-    b::App::build()
-        .insert_resource(b::WindowDescriptor {
-            title: "Tjess? Jes!".into(),
+    App::build()
+        .insert_resource(WindowDescriptor {
+            title: "Chess? Yes!".into(),
             ..Default::default()
         })
-        .insert_resource(b::ClearColor(b::Color::rgb(0.1, 0.1, 0.1)))
-        // .insert_resource(b::Msaa { samples: 4 })
-        .insert_resource(c::Board::default())
-        .add_plugins(b::DefaultPlugins)
-        // .add_plugin(bi::WorldInspectorPlugin::default())
-        .add_event::<MoveMadeEvent>()
-        .init_resource::<PieceMaterials>()
-        .add_startup_system(spawn_game_tiles_s.system())
-        .add_system(lerp_piece_positions_s.system())
-        .add_system(update_piece_squares_s.system())
-        .add_system(create_pieces_s.system())
-        // .add_system(random_moves_s.system())
-        .add_system(mouse_hover_highlights_s.system())
-        .add_system(set_square_colors_s.system())
-        .add_system(pick_up_piece_s.system())
+        .insert_resource(Msaa { samples: 2 })
+        // Plugins
+        .add_plugins(DefaultPlugins)
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        // Resources
+        .init_resource::<Board>()
+        .init_resource::<PieceAssetMap>()
+        .insert_resource(UIState::Default)
+        // Event types
+        .add_event::<BoardUpdateEvent>()
+        // Startup systems
+        .add_startup_system(setup_game_ui.system())
+        // Systems
+        .add_system(assign_square_sprites.system())
+        .add_system(possible_moves_hover.system())
+        .add_system(show_diagnostics.system())
+        .add_system(square_state_color.system())
+        .add_system(pick_up_piece.system())
+        .add_system(put_down_piece.system())
+        .add_system(move_picked_up_piece_to_cursor.system())
+        .add_system(cancel_move.system())
+        .add_system(get_pawn_promotion.system())
+        .add_system(update_end_game_text.system())
+        //
         .run();
 }
 
-const PIECE_Z_OFFSET: f32 = 1.0;
-const PIECE_LERP_SPEED: f32 = 80.;
-const CAMERA_POS_X: f32 = 35.;
-const CAMERA_POS_Y: f32 = 35.;
-const CAMERA_POS_Z: f32 = 100.;
+struct PieceAssetMap(HashMap<Piece, Handle<ColorMaterial>>);
+struct PieceSprite;
+#[derive(Clone, Copy)]
+struct PawnPromotionOption(piece::Kind);
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum BoardUpdateEvent {
+    MoveMade(Move),
+    State(BoardState),
+    Other,
+}
+struct GameEndElement;
+struct GameEndText;
+struct DiagnosticsInfoText;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UIState {
+    Default,
+    PickedUpPiece(Entity),
+    PromotionAsked(Position, Position),
+}
+struct PickedUpPieceParent(Entity);
+struct PawnPromotionElement(Entity);
 
-enum Square {
+#[derive(Clone, Copy)]
+enum ChessSquare {
     Normal,
     Movable,
     Capturable,
+    Promotable,
 }
-#[derive(Clone, Copy)]
-struct IsOnSquare(b::Entity);
-struct MoveMadeEvent(c::Move);
-struct PickedUpPiece;
-pub struct PieceMaterials(HashMap<c::Piece, b::Handle<b::ColorMaterial>>);
 
-fn random_moves_s(
-    mut board: b::ResMut<c::Board>,
-    time: b::Res<b::Time>,
-    mut t: b::Local<f32>,
-    mut move_made_event: b::EventWriter<MoveMadeEvent>,
+fn get_pawn_promotion(
+    mut state: ResMut<UIState>,
+    mut board: ResMut<Board>,
+    pawn_promotion_element: Res<PawnPromotionElement>,
+    mut pawn_promotion_element_query: Query<(&mut Style, &Children)>,
+    pawn_promotion_options_query: Query<(&Interaction, &PawnPromotionOption)>,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
 ) {
-    *t += time.delta_seconds();
-    if *t < 1. {
+    let (from, to) = if let UIState::PromotionAsked(from, to) = *state {
+        pawn_promotion_element_query
+            .get_mut(pawn_promotion_element.0)
+            .unwrap()
+            .0
+            .display = Display::Flex;
+        (from, to)
+    } else {
+        pawn_promotion_element_query
+            .get_mut(pawn_promotion_element.0)
+            .unwrap()
+            .0
+            .display = Display::None;
+        return;
+    };
+
+    let mut chosen = piece::Kind::Pawn;
+    for (&interaction, &piece) in pawn_promotion_options_query.iter() {
+        if interaction == Interaction::Clicked {
+            chosen = piece.0;
+        }
+    }
+
+    if chosen == piece::Kind::Pawn {
         return;
     }
-    *t -= 1.;
 
-    use rand::seq::SliceRandom;
-    let moves: Vec<c::Move> = board.all_legal_moves().collect();
-    if let Some(&move_) = moves.choose(&mut rand::thread_rng()) {
-        let _ = board.make_move(move_);
-        move_made_event.send(MoveMadeEvent(move_));
-    }
+    assert_eq!(board.next_to_move(), board[from].unwrap().color);
+
+    let move_ = Move {
+        from,
+        to,
+        promotion: Some(chosen),
+    };
+
+    *state = UIState::Default;
+    board_update_event.send(BoardUpdateEvent::MoveMade(move_));
+    board_update_event.send(BoardUpdateEvent::State(board.make_move(move_).unwrap()));
 }
 
-fn set_square_colors_s(
-    mut square_q: b::Query<
-        (&Square, &c::Color, &mut b::Handle<b::ColorMaterial>),
-        b::Changed<Square>,
-    >,
-    mut materials: b::ResMut<b::Assets<b::ColorMaterial>>,
+fn move_picked_up_piece_to_cursor(
+    picked_up_piece_parent: Res<PickedUpPieceParent>,
+    mut picked_up_piece_parent_query: Query<&mut Style>,
+    windows: Res<Windows>,
+    cam_query: Query<&Transform, With<Camera>>,
 ) {
-    for (square, color, mut material_h) in square_q.iter_mut() {
-        *material_h = materials.add(
-            match (square, color) {
-                (Square::Normal, c::Color::White) => b::Color::rgb_u8(153, 133, 109),
-                (Square::Normal, c::Color::Black) => b::Color::rgb_u8(201, 187, 168),
-                (Square::Movable, c::Color::White) => b::Color::rgb_u8(97, 114, 122),
-                (Square::Movable, c::Color::Black) => b::Color::rgb_u8(75, 116, 127),
-                (Square::Capturable, c::Color::White) => b::Color::rgb_u8(153, 133, 109),
-                (Square::Capturable, c::Color::Black) => b::Color::rgb_u8(153, 133, 109),
-            }
-            .into(),
-        );
-    }
-}
+    let window = windows.get_primary().unwrap();
 
-fn cursor_to_world_coordinates(window: &b::Window) -> b::Vec2 {
     if let Some(pos) = window.cursor_position() {
-        (pos - b::Vec2::new(CAMERA_POS_X, CAMERA_POS_Y)) / window.height() * 0.48
-    } else {
-        b::Vec2::ZERO
-    }
-}
+        let window_height = window.height();
+        let side_length = window_height * 0.8 / 8.0;
 
-fn get_square_position_under_cursor(window: &b::Window) -> Option<c::Position> {
-    if let Some(mut cursor_position) = window.cursor_position() {
-        cursor_position -= b::Vec2::new(window.width() / 2., window.height() / 2.);
-        cursor_position /= window.height();
-        cursor_position *= 4. / 0.48;
-        cursor_position.y *= -1.;
-        cursor_position += b::Vec2::new(4., 4.);
-        cursor_position = cursor_position.floor();
-        let position = c::Position::new_i8(cursor_position.x as i8, cursor_position.y as i8);
-        position
-    } else {
-        None
-    }
-}
+        let cam_tranform = cam_query.single().unwrap();
+        let pos = cam_tranform.compute_matrix() * pos.extend(0.0).extend(1.0);
+        let pos = Vec2::new(pos.x, pos.y);
 
-fn pick_up_piece_s(
-    mut commands: b::Commands,
-    board: b::Res<c::Board>,
-    windows: b::Res<b::Windows>,
-    square_q: b::Query<&c::Position, b::With<Square>>,
-    piece_q: b::Query<(b::Entity, &IsOnSquare), b::With<c::Piece>>,
-    cursor_events: b::Res<b::Input<b::MouseButton>>,
-) {
-    if !cursor_events.just_pressed(b::MouseButton::Left) {
-        return;
-    }
-
-    let position = windows
-        .get_primary()
-        .map(|win| get_square_position_under_cursor(win))
-        .flatten();
-
-    if let Some(cursor_pos) = position {
-        for (piece_entity, square_entity) in piece_q.iter() {
-            let square_pos = square_q.get(square_entity.0).unwrap();
-            if *square_pos == cursor_pos {
-                commands.entity(piece_entity).insert(PickedUpPiece);
-                break;
-            }
-        }
-    }
-}
-
-fn mouse_hover_highlights_s(
-    board: b::Res<c::Board>,
-    windows: b::Res<b::Windows>,
-    mut square_q: b::Query<(&c::Position, &mut Square)>,
-) {
-    let destinations: HashSet<c::Position> = windows
-        .get_primary()
-        .map(|win| get_square_position_under_cursor(win))
-        .flatten()
-        .map(|pos| board.moves_at_position(pos))
-        .map_or(Default::default(), |moves| moves.collect());
-    for (square_position, mut square) in square_q.iter_mut() {
-        if destinations.contains(square_position) {
-            if board[*square_position].is_some() {
-                *square = Square::Capturable;
-            } else {
-                *square = Square::Movable;
-            }
-        } else {
-            *square = Square::Normal;
-        }
-    }
-}
-
-fn lerp_piece_positions_s(
-    windows: b::Res<b::Windows>,
-    time: b::Res<b::Time>,
-    square_q: b::Query<&b::Transform, (b::With<Square>, b::Without<c::Piece>)>,
-    mut piece_q: b::Query<
-        (&IsOnSquare, &mut b::Transform, Option<&PickedUpPiece>),
-        b::With<c::Piece>,
-    >,
-) {
-    for (square, mut piece_transform, is_picked_up) in piece_q.iter_mut() {
-        let square_transform = square_q.get(square.0).unwrap();
-        let target = if is_picked_up.is_some() {
-            if let Some(target) = windows
-                .get_primary()
-                .map(|win| cursor_to_world_coordinates(win))
-            {
-                target.extend(piece_transform.translation.z)
-            } else {
-                continue;
-            }
-        } else {
-            square_transform.translation + b::Vec3::new(0., 0., PIECE_Z_OFFSET)
-        };
-
-        let differance = target - piece_transform.translation;
-        if differance.length() < 1. {
-            piece_transform.translation = target;
-            piece_transform.rotation = b::Quat::from_axis_angle(b::Vec3::X, 0.);
-        } else {
-            let delta = differance.normalize_or_zero() * time.delta_seconds() * PIECE_LERP_SPEED;
-            piece_transform.translation += delta;
-
-            piece_transform.rotation =
-                b::Quat::from_axis_angle(b::Vec3::new(0., 0., 1.), differance.z / 10.);
-        }
-    }
-}
-
-fn update_piece_squares_s(
-    mut commands: b::Commands,
-    square_q: b::Query<(b::Entity, &c::Position), b::With<Square>>,
-    mut piece_q: b::Query<(b::Entity, &mut IsOnSquare), b::With<c::Piece>>,
-    mut move_made_event: b::EventReader<MoveMadeEvent>,
-) {
-    for MoveMadeEvent(move_) in move_made_event.iter() {
-        let mut new_square = b::Entity::new(0);
-        for (square_entity, &position) in square_q.iter() {
-            if position == move_.to {
-                new_square = square_entity;
-                break;
-            }
-        }
-        assert_ne!(new_square.id(), 0);
-        for (piece_entity, mut square) in piece_q.iter_mut() {
-            let (_, square_position) = square_q.get(square.0).unwrap();
-            if *square_position == move_.to {
-                commands.entity(piece_entity).despawn_recursive();
-            }
-            if *square_position == move_.from {
-                square.0 = new_square;
-            }
-        }
-    }
-}
-
-fn create_pieces_s(
-    mut commands: b::Commands,
-    board: b::Res<c::Board>,
-    piece_materials: b::Res<PieceMaterials>,
-    square_q: b::Query<(b::Entity, &b::Transform, &c::Position), b::With<Square>>,
-) {
-    if !board.is_added() {
-        return;
-    }
-
-    for (entity, &transform, &position) in square_q.iter() {
-        if let Some(piece) = board[position] {
-            entities::spawn_piece(&mut commands, piece, &*piece_materials, transform, entity);
-        }
-    }
-}
-
-fn spawn_game_tiles_s(mut commands: b::Commands) {
-    commands.spawn_bundle(b::PerspectiveCameraBundle {
-        transform: b::Transform {
-            translation: b::Vec3::new(CAMERA_POS_X, CAMERA_POS_Y, CAMERA_POS_Z),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-
-    for rank in 0..8 {
-        for file in 0..8 {
-            let position = c::Position::new_unchecked(file, rank);
-            entities::spawn_square(&mut commands, position);
-        }
-    }
-}
-
-impl b::FromWorld for PieceMaterials {
-    fn from_world(world: &mut b::World) -> Self {
-        let mut map: HashMap<c::Piece, b::Handle<b::ColorMaterial>> = Default::default();
-
-        let asset_server = world.get_resource::<b::AssetServer>().unwrap();
-        let mut assets = vec![];
-
-        use c::{piece::Kind::*, Color::*};
-        for (color, color_char) in [(White, 'w'), (Black, 'b')] {
-            for kind in [Pawn, Bishop, Rook, Knight, King, Queen] {
-                let piece = c::Piece { color, kind };
-                let path = format!(
-                    "pieces/{}{}.png",
-                    color_char,
-                    piece.kind.name().to_lowercase()
-                );
-
-                assets.push((piece, asset_server.load(path.as_str())));
-            }
-        }
-
-        let mut materials = world
-            .get_resource_mut::<b::Assets<b::ColorMaterial>>()
+        let mut style = picked_up_piece_parent_query
+            .get_mut(picked_up_piece_parent.0)
             .unwrap();
+
+        style.position.left = Val::Px(pos.x - side_length / 2.0);
+        style.position.bottom = Val::Px(pos.y - side_length / 2.0);
+        style.size = Size {
+            width: Val::Px(side_length),
+            height: Val::Px(side_length),
+        }
+    }
+}
+
+fn pick_up_piece(
+    mut commands: Commands,
+    query: Query<(Entity, &Interaction, &Position), (Changed<Interaction>, With<PieceSprite>)>,
+    mut fp_query: Query<&mut FocusPolicy, With<PieceSprite>>,
+    board: Res<Board>,
+    mut state: ResMut<UIState>,
+    picked_up_piece_parent: Res<PickedUpPieceParent>,
+) {
+    if *state != UIState::Default {
+        return;
+    }
+
+    for (entity, &interaction, &pos) in query.iter() {
+        if interaction != Interaction::Clicked {
+            continue;
+        }
+        if Some(board.next_to_move()) != board[pos].map(|p| p.color) {
+            continue;
+        }
+        for mut focus_p in fp_query.iter_mut() {
+            *focus_p = FocusPolicy::Pass;
+        }
+        commands
+            .entity(entity)
+            .remove::<Parent>()
+            .insert(Parent(picked_up_piece_parent.0));
+        *state = UIState::PickedUpPiece(entity)
+    }
+}
+
+fn put_down_piece(
+    query: Query<(&Interaction, &Position), With<ChessSquare>>,
+    mut state: ResMut<UIState>,
+    picked_up_piece_query: Query<&Position, Without<ChessSquare>>,
+    mut board: ResMut<Board>,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
+) {
+    let piece = match *state {
+        UIState::PickedUpPiece(p) => p,
+        _ => return,
+    };
+    let from = match picked_up_piece_query.get(piece) {
+        Ok(sq) => *sq,
+        // I dont know why this ever errors but this seems to work
+        Err(_) => {
+            *state = UIState::Default;
+            board_update_event.send(BoardUpdateEvent::Other);
+            return;
+        }
+    };
+    let mut target = None;
+    for (&interaction, &sq_spec) in query.iter() {
+        if interaction == Interaction::Clicked {
+            target = Some(sq_spec);
+        }
+    }
+    let to = match target {
+        Some(t) => t,
+        None => return,
+    };
+
+    let move_ = Move {
+        from,
+        to,
+        promotion: None,
+    };
+
+    if to == from {
+        *state = UIState::Default;
+    } else if board.missing_promotion(move_) {
+        *state = UIState::PromotionAsked(from, to);
+        board_update_event.send(BoardUpdateEvent::MoveMade(move_));
+    } else if let Ok(board_state) = board.make_move(Move {
+        from,
+        to,
+        promotion: None,
+    }) {
+        *state = UIState::Default;
+        board_update_event.send(BoardUpdateEvent::State(board_state));
+    }
+}
+
+fn cancel_move(
+    mouse_input: Res<Input<MouseButton>>,
+    kb_input: Res<Input<KeyCode>>,
+    mut state: ResMut<UIState>,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
+) {
+    if !(mouse_input.just_pressed(MouseButton::Right) || kb_input.just_pressed(KeyCode::Escape)) {
+        return;
+    }
+    *state = UIState::Default;
+    board_update_event.send(BoardUpdateEvent::Other);
+}
+
+fn possible_moves_hover(
+    piece_query: Query<(&Interaction, &Position), Changed<Interaction>>,
+    mut square_query: Query<(&Position, &mut ChessSquare)>,
+    board: Res<Board>,
+    state: Res<UIState>,
+) {
+    if *state != UIState::Default {
+        return;
+    }
+
+    let mut from = None;
+    let mut changed = false;
+
+    for (&interaction, &sq_spec) in piece_query.iter() {
+        changed = true;
+        if interaction == Interaction::Hovered || interaction == Interaction::Clicked {
+            from = Some(sq_spec);
+            break;
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    for (_, mut chess_square) in square_query.iter_mut() {
+        *chess_square = ChessSquare::Normal;
+    }
+    let from = match from {
+        Some(hovered) => hovered,
+        None => return,
+    };
+    let destinations: HashSet<Position> = board.moves_at_position(from).collect();
+
+    for (&to, mut chess_square) in square_query.iter_mut() {
+        if destinations.contains(&to) {
+            if board.missing_promotion(Move {
+                from,
+                to,
+                promotion: None,
+            }) {
+                *chess_square = ChessSquare::Promotable;
+            } else if board[to].is_some() {
+                *chess_square = ChessSquare::Capturable;
+            } else {
+                *chess_square = ChessSquare::Movable;
+            }
+        }
+    }
+}
+
+// TODO: cache materials
+fn square_state_color(
+    mut query: Query<(&Position, &ChessSquare, &mut Handle<ColorMaterial>), Changed<ChessSquare>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for (&position, &chess_square, mut material) in query.iter_mut() {
+        let is_white = (position.file() + position.rank()) % 2 == 1;
+        let color = match (is_white, chess_square) {
+            (true, ChessSquare::Normal) => Color::rgb_u8(50, 50, 50),
+            (false, ChessSquare::Normal) => Color::rgb_u8(40, 40, 40),
+            (true, ChessSquare::Capturable) => Color::rgb_u8(0xd0, 0x87, 0x70),
+            (false, ChessSquare::Capturable) => Color::rgb_u8(0xbf, 0x61, 0x6a),
+            (true, ChessSquare::Movable) => Color::rgb_u8(0xdb, 0xbb, 0x7b),
+            (false, ChessSquare::Movable) => Color::rgb_u8(0xca, 0xa1, 0x75),
+            (true, ChessSquare::Promotable) => Color::rgb_u8(0x81, 0xa1, 0xc1),
+            (false, ChessSquare::Promotable) => Color::rgb_u8(0x5e, 0x81, 0xac),
+        };
+        *material = materials.add(color.into());
+    }
+}
+
+fn show_diagnostics(
+    diagnostics: Res<Diagnostics>,
+    mut query: Query<&mut Text, With<DiagnosticsInfoText>>,
+) {
+    if let Some(fps) = diagnostics
+        .get(FrameTimeDiagnosticsPlugin::FPS)
+        .unwrap()
+        .average()
+    {
+        let mut text = query.single_mut().unwrap();
+        text.sections[0].value = format!("Fps: {:.0}", fps);
+    }
+}
+
+impl FromWorld for PieceAssetMap {
+    fn from_world(world: &mut World) -> Self {
+        let mut this = HashMap::default();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+        let mut assets = vec![];
+        for (color, color_ch) in [(ChessColor::White, 'w'), (ChessColor::Black, 'b')] {
+            for kind in [
+                piece::Kind::Bishop,
+                piece::Kind::King,
+                piece::Kind::Knight,
+                piece::Kind::Pawn,
+                piece::Kind::Queen,
+                piece::Kind::Rook,
+            ] {
+                let path = format!("pieces/{}{}.png", color_ch, kind.name().to_lowercase());
+                assets.push((Piece { color, kind }, asset_server.load(path.as_str())));
+            }
+        }
+        let mut materials = world.get_resource_mut::<Assets<ColorMaterial>>().unwrap();
         for (piece, asset) in assets {
             let material = materials.add(asset.into());
-            map.insert(piece, material);
+            this.insert(piece, material);
+        }
+        Self(this)
+    }
+}
+
+fn update_end_game_text(
+    mut board_update_event: EventReader<BoardUpdateEvent>,
+    mut text_query: Query<&mut Text, With<GameEndText>>,
+    mut parent_query: Query<&mut Style, With<GameEndElement>>,
+) {
+    for event in board_update_event.iter() {
+        match event {
+            BoardUpdateEvent::State(BoardState::Normal) => {
+                parent_query.single_mut().unwrap().display = Display::None;
+                text_query.single_mut().unwrap().sections[0].value.clear();
+            }
+            BoardUpdateEvent::State(state) => {
+                parent_query.single_mut().unwrap().display = Display::Flex;
+                text_query.single_mut().unwrap().sections[0].value = format!("{:?}!", state);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn assign_square_sprites(
+    mut commands: Commands,
+    square_query: Query<(Entity, &Position), With<ChessSquare>>,
+    sprites: Query<(Entity, &PieceSprite)>,
+    board: Res<Board>,
+    asset_map: Res<PieceAssetMap>,
+    mut board_update_event: EventReader<BoardUpdateEvent>,
+) {
+    for &event in board_update_event.iter() {
+        if event != BoardUpdateEvent::Other {
+            continue;
+        }
+        for (entity, _) in sprites.iter() {
+            commands.entity(entity).despawn();
         }
 
-        Self(map)
+        for (entity, &position) in square_query.iter() {
+            if let Some(piece) = board[position] {
+                commands.entity(entity).with_children(|parent| {
+                    parent
+                        .spawn_bundle(NodeBundle {
+                            style: Style {
+                                size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
+                                position_type: PositionType::Absolute,
+                                ..Default::default()
+                            },
+                            material: asset_map.0.get(&piece).unwrap().clone(),
+                            ..Default::default()
+                        })
+                        .insert(Interaction::default())
+                        .insert(FocusPolicy::Block)
+                        .insert(position.clone())
+                        .insert(PieceSprite);
+                });
+            }
+        }
     }
+}
+
+fn setup_game_ui(
+    mut commands: Commands,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
+    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    piece_asset_map: Res<PieceAssetMap>,
+) {
+    let mut picked_up_piece_parent = Entity::new(0);
+    let mut pawn_promotion_element = Entity::new(0);
+    let font = asset_server.load("fonts/FiraSans-Bold.otf");
+    commands.spawn_bundle(UiCameraBundle::default());
+    commands
+        .spawn_bundle(NodeBundle {
+            style: Style {
+                size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..Default::default()
+            },
+            material: materials.add(Color::rgb_u8(20, 20, 20).into()),
+            ..Default::default()
+        })
+        .with_children(|root| {
+            root.spawn_bundle(NodeBundle {
+                style: Style {
+                    size: Size::new(Val::Undefined, Val::Percent(80.0)),
+                    aspect_ratio: Some(0.8), // i dont know why but this makes it a square
+                    ..Default::default()
+                },
+                material: materials.add(Color::rgb_u8(40, 40, 40).into()),
+                ..Default::default()
+            })
+            .with_children(|board| {
+                board
+                    .spawn_bundle(NodeBundle {
+                        style: Style {
+                            position_type: PositionType::Relative,
+                            position: Rect {
+                                left: Val::Percent(100.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        material: materials.add(Color::NONE.into()),
+                        ..Default::default()
+                    })
+                    .with_children(|side_proxy| {
+                        side_proxy
+                            .spawn_bundle(NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Relative,
+                                    position: Rect {
+                                        left: Val::Px(40.0),
+                                        ..Default::default()
+                                    },
+                                    size: Size::new(Val::Px(200.0), Val::Percent(100.0)),
+                                    ..Default::default()
+                                },
+                                material: materials.add(Color::rgb_u8(30, 30, 30).into()),
+                                ..Default::default()
+                            })
+                            .with_children(|side_panel| {
+                                side_panel
+                                    .spawn_bundle(TextBundle {
+                                        text: Text::with_section(
+                                            "",
+                                            TextStyle {
+                                                font: font.clone(),
+                                                font_size: 12.0,
+                                                color: Color::WHITE,
+                                            },
+                                            Default::default(),
+                                        ),
+                                        ..Default::default()
+                                    })
+                                    .insert(DiagnosticsInfoText);
+                            });
+                    });
+                // grid
+                for rank in 0..8 {
+                    for file in 0..8 {
+                        board
+                            .spawn_bundle(NodeBundle {
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    position: Rect {
+                                        bottom: Val::Percent(rank as f32 * 100.0 / 8.0),
+                                        left: Val::Percent(file as f32 * 100.0 / 8.0),
+                                        ..Default::default()
+                                    },
+                                    size: Size::new(
+                                        Val::Percent(100.0 / 8.0),
+                                        Val::Percent(100.0 / 8.0),
+                                    ),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            })
+                            .insert(Interaction::default())
+                            .insert(Position::new(file, rank))
+                            .insert(ChessSquare::Normal);
+                    }
+                }
+            });
+            root.spawn_bundle(NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    flex_direction: FlexDirection::RowReverse,
+                    border: Rect {
+                        top: Val::Px(20.0),
+                        left: Val::Px(20.0),
+                        right: Val::Px(20.0),
+                        bottom: Val::Px(20.0),
+                    },
+                    // display: Display::None,
+                    ..Default::default()
+                },
+                material: materials.add(Color::rgb_u8(0xb4, 0x8e, 0xad).into()),
+                ..Default::default()
+            })
+            .with_children(|parent| {
+                parent
+                    .spawn_bundle(TextBundle {
+                        text: Text::with_section(
+                            "",
+                            TextStyle {
+                                font_size: 64.0,
+                                color: Color::WHITE,
+                                font: font.clone(),
+                            },
+                            TextAlignment {
+                                horizontal: HorizontalAlign::Center,
+                                vertical: VerticalAlign::Center,
+                            },
+                        ),
+                        ..Default::default()
+                    })
+                    .insert(GameEndText);
+            })
+            .insert(GameEndElement);
+            picked_up_piece_parent = root
+                .spawn_bundle(NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        ..Default::default()
+                    },
+                    material: materials.add(Color::NONE.into()),
+                    ..Default::default()
+                })
+                .insert(FocusPolicy::Pass)
+                .id();
+            pawn_promotion_element = root
+                .spawn_bundle(NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        display: Display::None,
+                        ..Default::default()
+                    },
+                    material: materials.add(Color::rgb_u8(0x88, 0xc0, 0xd0).into()),
+                    ..Default::default()
+                })
+                .with_children(|parent| {
+                    for kind in [
+                        piece::Kind::Bishop,
+                        piece::Kind::Knight,
+                        piece::Kind::Queen,
+                        piece::Kind::Rook,
+                    ] {
+                        parent
+                            .spawn_bundle(NodeBundle {
+                                style: Style {
+                                    size: Size {
+                                        width: Val::Px(80.0),
+                                        height: Val::Px(80.0),
+                                    },
+                                    ..Default::default()
+                                },
+                                material: piece_asset_map.0[&Piece {
+                                    kind,
+                                    color: ChessColor::White,
+                                }]
+                                    .clone(),
+                                ..Default::default()
+                            })
+                            .insert(Interaction::default())
+                            .insert(PawnPromotionOption(kind));
+                    }
+                })
+                .id();
+        });
+
+    commands.insert_resource(PickedUpPieceParent(picked_up_piece_parent));
+    commands.insert_resource(PawnPromotionElement(pawn_promotion_element));
+
+    board_update_event.send(BoardUpdateEvent::Other);
 }
